@@ -66,12 +66,7 @@ bash ./models/download-ggml-model.sh base.en
 bash ./models/download-ggml-model.sh medium.en
 ```
 
-Make sure the paths in the code match your installation:
-- Whisper binary: `~/whisper.cpp/build/bin/whisper-cli`
-- Fast mode model: `~/whisper.cpp/models/ggml-base.en.bin`
-- Accurate mode model: `~/whisper.cpp/models/ggml-medium.en.bin`
-
-If you install Whisper.cpp in a different location, you'll need to update the paths in `my-whisper.el`.
+By default, the package expects Whisper.cpp to be installed in `~/whisper.cpp/`. If you install it elsewhere, you can customize the location (see Configuration section below).
 
 ## Installation
 
@@ -111,6 +106,9 @@ If you use `use-package`, add this to your `init.el`:
 ```elisp
 (use-package my-whisper
   :load-path "~/.emacs.d/my-whisper"
+  :custom
+  (my-whisper-homedir "~/whisper.cpp/")  ; Optional: customize if different
+  (my-whisper-model "ggml-base.en.bin")  ; Optional: choose default model
   :bind (("C-c v" . my-whisper-transcribe-fast)
          ("C-c n" . my-whisper-transcribe)))
 ```
@@ -140,35 +138,40 @@ If you use `use-package`, add this to your `init.el`:
 
 ## Configuration
 
+You can customize my-whisper through Emacs' built-in customization interface or directly in your `init.el`.
+
+### Using Emacs Customize Interface
+
+Run `M-x customize-group RET my-whisper RET` to access all customization options:
+
+- **my-whisper-homedir**: Directory where Whisper.cpp is installed (default: `~/whisper.cpp/`)
+- **my-whisper-model**: Which model to use by default
+  - `ggml-base.en.bin` - Fast mode (quick, good accuracy)
+  - `ggml-medium.en.bin` - Accurate mode (slower, better accuracy)
+  - Custom model filename
+- **my-whisper-vocabulary-file**: Path to vocabulary hints file (default: `~/.emacs.d/whisper-vocabulary.txt`)
+
+### Custom Configuration in init.el
+
+```elisp
+;; Set custom Whisper.cpp installation directory
+(setq my-whisper-homedir "/usr/local/whisper.cpp/")
+
+;; Choose default model (base.en or medium.en)
+(setq my-whisper-model "ggml-medium.en.bin")
+
+;; Set custom vocabulary file location
+(setq my-whisper-vocabulary-file "~/Documents/my-vocabulary.txt")
+```
+
 ### Custom Key Bindings
 
-To change the key bindings, modify your `init.el`:
+To change the key bindings, add to your `init.el`:
 
 ```elisp
 ;; Use different key bindings
 (global-set-key (kbd "C-c s") #'my-whisper-transcribe-fast)  ; Fast mode
 (global-set-key (kbd "C-c S") #'my-whisper-transcribe)       ; Accurate mode
-```
-
-### Custom Model Path
-
-To use a different model for accurate mode, set the `my-whisper-model-path` variable in your `init.el`:
-
-```elisp
-;; Use a different model (e.g., large model for even better accuracy)
-(setq my-whisper-model-path "~/whisper.cpp/models/ggml-large.en.bin")
-```
-
-### Custom Paths
-
-If your Whisper.cpp installation is in a different location, you'll need to modify the paths in `my-whisper.el`:
-
-```elisp
-;; Example: if whisper-cli is in /usr/local/bin/
-;; Edit the format strings in my-whisper.el from:
-;; "~/whisper.cpp/build/bin/whisper-cli -m ~/whisper.cpp/models/ggml-base.en.bin ..."
-;; to:
-;; "/usr/local/bin/whisper-cli -m /path/to/your/model.bin ..."
 ```
 
 ### Custom Vocabulary for Proper Nouns
@@ -194,18 +197,20 @@ This transcription discusses classical Greek philosophy, including scholars and 
 1. **"sox: command not found"**
    - Install sox using your system package manager
 
-2. **"whisper-cli: command not found"**
+2. **"whisper-cli: command not found" or path errors**
    - Ensure Whisper.cpp is built and the path is correct
    - Check that `~/whisper.cpp/build/bin/whisper-cli` exists
+   - If installed elsewhere, customize `my-whisper-homedir` to match your installation
+   - Run `M-x customize-group RET my-whisper RET` to verify paths
 
 3. **No audio recorded**
    - Check your microphone permissions
    - Test sox manually: `sox -d -r 16000 -c 1 -b 16 test.wav`
 
 4. **Transcription not working**
-   - Verify the model files exist:
-     - Fast mode: `~/whisper.cpp/models/ggml-base.en.bin`
-     - Accurate mode: `~/whisper.cpp/models/ggml-medium.en.bin`
+   - The package now validates paths on startup and will show clear error messages
+   - Verify the model files exist in `~/whisper.cpp/models/`
+   - Run `M-x my-whisper-transcribe-fast` to see validation errors
    - Test whisper-cli manually with a wav file
 
 ### Testing the Setup
