@@ -4,7 +4,7 @@
 
 ;; Author: Pierre Rouleau based on original work done by Raoul Comninos
 ;; Version: 0.0.2
-;; Package-Version: 20251129.1057
+;; Package-Version: 20251129.1223
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, speech, whisper, transcription
 ;; URL: https://github.com/emacselements/my-whisper
@@ -39,7 +39,17 @@
 
 ;; Features:
 ;; - `my-whisper-mode', a global minor mode that records audio and insert
-;;   transcribed text in buffer.
+;;   transcribed text in buffer.  While this global minor mode is active the
+;;   following  commands are available:
+;;   - `my-whisper-stop-record' to stop  current audio recording, and insert
+;;     transcribed text in current buffer at point.
+;;   - `my-whisper-record-again' to restart audio recording.
+;;   - Executing `my-whisper-mode' again stops recording if it was active
+;;     and if it was active insert transcribed text in current buffer at
+;;     point.
+;; - The `my-whisper-transcribe-file' command that prompts for a file,
+;;   transcribe it and insert text in current buffer at point.
+;;
 ;; - Several transcription modes are supported by customization
 ;; - Custom vocabulary support for specialized terminology
 ;; - Automatic vocabulary length validation
@@ -51,16 +61,14 @@
 ;;  - Activate whisper-mode with: M-x my-whisper-mode
 ;;    - This starts audio recording store in a WAV file.
 ;;  - Stop recording and insert transcribed text by one of the following:
-;;    - C-c g  : to stop, insert transcribed text but keep mode active.
-;;      - You can start recording again with: C-c r
+;;    - M-x my-whisper-stop-record : stop recording and transcribe text.
+;;      - This command is also bound to C-c .
 ;;    - M-x my-whisper-mode : stop recording, insert transcribed text and
 ;;                            stop the mode.
 ;;
 ;; The `my-whisper-mode' is a global minor mode; recording audio does not halt
 ;; Emacs and you can execute any other Emacs operation.
 ;;
-;; Text is inserted inside the buffer that is active at the moment you stop
-;; recording (or stop the minor mode)
 ;;
 ;; Recommended keybindings to toggle `my-whisper-mode' to add to your init.el
 ;; file:
@@ -305,6 +313,25 @@ Recording starting with %s. Editing halted. Press C-g to stop."
                    ;; No detection of end: error!
                    (message "Whisper process error: %s" event))))))
 
+
+;;;###autoload
+(defun my-whisper-transcribe-file (fname)
+  "Transcribe a recorded audio file FNAME, insert transcribed text at point.
+This command can only be used when `my-whisper-mode is inactive."
+  (interactive "fWAV file to transcribe: ")
+  ;; Validate requirements first
+  (if my-whisper-mode
+      (user-error "Cannot use this command while my-whisper-mode is active!"))
+  (unless (file-exists-p fname)
+    (user-error "Specified file does not exist: %s" fname))
+  (my-whisper--validate-environment)
+
+  ;; All is OK, transcribe the file.
+  ;; Set the name of the file
+  (setq my-whisper--wav-file fname)
+  (my-whisper--transcribe)
+  (setq my-whisper--wav-file nil))
+
 ;;;###autoload
 (defun my-whisper-stop-record ()
   "Stop recording, insert transcribed text at point."
@@ -347,7 +374,8 @@ buffer.
       (if my-whisper-mode
           ;; Start minor mode: start recording
           (progn
-            ;; Inform user recording is starting. Warn if vocabulary is too large.
+            ;; Inform user recording is starting.
+            ;; Warn if vocabulary is too large.
             (my-whisper--start-message model vocab-word-count)
             ;; Record audio in the specified wav-file
             (setq my-whisper--wav-file wav-file)
