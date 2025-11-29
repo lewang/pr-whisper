@@ -1,10 +1,10 @@
 ;;; my-whisper.el --- Speech-to-text using Whisper.cpp -*- lexical-binding: t -*-
 
-;; Copyright (C) 2025 Raoul Comninos
+;; Copyright (C) 2025 Raoul Comninos, Pierre Rouleau
 
-;; Author: Raoul Comninos
-;; Author: Pierre Rouleau
-;; Version: 1.0.0
+;; Author: Pierre Rouleau based on original work done by Raoul Comninos
+;; Version: 0.0.2
+;; Package-Version: 20251125.0803
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, speech, whisper, transcription
 ;; URL: https://github.com/emacselements/my-whisper
@@ -40,7 +40,7 @@
 ;; Features:
 ;; - `my-whisper-mode', a global minor mode that records audio and insert
 ;;   transcribed text in buffer.
-;; - Two transcription modes: fast (base.en) and accurate (medium.en)
+;; - Several transcription modes are supported by customization
 ;; - Custom vocabulary support for specialized terminology
 ;; - Automatic vocabulary length validation
 ;; - Async processing with process sentinels
@@ -110,12 +110,6 @@ Use a string of the same format that what is the output of `kbd'."
 The default is sox, without a path; you can use this unchanged if it
 is installed in a directory in your PATH.  If it is stored somewhere else, then
 include its directory path."
-  :group 'my-whisper
-  :type 'string)
-
-(defcustom my-whisper-model-fast "ggml-base.en.bin"
-  "Whisper model for fast transcription mode.
-This model is used by `my-whisper-transcribe-fast'."
   :group 'my-whisper
   :type 'string)
 
@@ -360,4 +354,12 @@ buffer.
 
 
 (provide 'my-whisper)
+
+;; Local variables:
+;; time-stamp-format: "%Y%02m%02d.%02H%02M"
+;; time-stamp-start: "Package-Version:[ \t]+\\\\?"
+;; time-stamp-end: "\n"
+;; time-stamp-line-limit: 15
+;; End:
+
 ;;; my-whisper.el ends here
