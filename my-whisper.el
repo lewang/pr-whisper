@@ -4,7 +4,7 @@
 
 ;; Author: Pierre Rouleau based on original work done by Raoul Comninos
 ;; Version: 0.0.2
-;; Package-Version: 20251125.0803
+;; Package-Version: 20251129.1045
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, speech, whisper, transcription
 ;; URL: https://github.com/emacselements/my-whisper
@@ -121,8 +121,15 @@ The common options (all English) models:
 - ggml-large-v3-turbo.bin: Best accuracy, slower
 - ggml-medium.en.bin     : Good balance of speed and accuracy
 - ggml-small.en.bin      : Faster than medium, less accurate
-- ggml-base.en.bin       : Fastest, least accurate"
+- ggml-base.en.bin       : Fastest, least accurate
+
+See the ggerganov whisper.cpp models link for other models.
+Store the models in the directory identified by `my-whisper-homedir'."
   :group 'my-whisper
+  :link '(url-link :tag "ggerganov whisper.cpp models"
+                   "https://huggingface.co/ggerganov/whisper.cpp/tree/main")
+  :link '(url-link :tag "whisper.cpp @ Github"
+                   "https://github.com/ggml-org/whisper.cpp")
   :type '(choice
           (const :tag "Large  model, best accuracy, slower  " "ggml-large-v3-turbo.bin")
           (const :tag "Medium model, balance speed/accuracy " "ggml-medium.en.bin")
@@ -300,7 +307,7 @@ Recording starting with %s. Editing halted. Press C-g to stop."
 
 ;;;###autoload
 (defun my-whisper-stop-record ()
-  "Stop Recording."
+  "Stop recording, insert transcribed text at point."
   (interactive)
   (interrupt-process my-whisper--recording-process-name)
   (setq my-whisper--recording-process-name nil)
