@@ -1,10 +1,4 @@
-## Support & Donations
-
-If you find this project helpful, consider supporting it!
-
-[Donate via PayPal](https://www.paypal.com/paypalme/revrari)
-
-# My Whisper - Speech-to-Text for Emacs
+# My Whisper - Speech-to-Text for Emacs - My fork of it.
 
 A simple Emacs package that provides speech-to-text functionality using Whisper.cpp. Record audio directly from Emacs and have it transcribed and inserted at your cursor position.
 
@@ -17,7 +11,7 @@ A simple Emacs package that provides speech-to-text functionality using Whisper.
 ## Features
 
 - Record audio with simple key bindings
-- Two transcription modes:
+- Several transcription modes selected by customization, including:
   - **Fast mode** (`C-c n`): Uses base.en model for quick transcription
   - **Accurate mode** (`C-c v`): Uses medium.en model for more accurate results
 - **Vocabulary hints**: Provide a custom vocabulary file to improve recognition of proper nouns and specialized terms (e.g., Greek names like Socrates, Alcibiades, Diotima)
@@ -66,59 +60,20 @@ bash ./models/download-ggml-model.sh base.en
 bash ./models/download-ggml-model.sh medium.en
 ```
 
-By default, the package expects Whisper.cpp to be installed in `~/whisper.cpp/`. If you install it elsewhere, you can customize the location (see Configuration section below).
-
-## Installation
-
-### Option 1: Manual Installation
-
-1. Clone or download this repository:
-   ```bash
-   git clone <your-repo-url> ~/.emacs.d/my-whisper
-   ```
-
-2. Add the following to your `init.el` or `.emacs` file:
-   ```elisp
-   ;; Add the package directory to load-path
-   (add-to-list 'load-path "~/.emacs.d/my-whisper")
-
-   ;; Load the package
-   (require 'my-whisper)
-   ```
-
-### Option 2: Direct File Installation
-
-1. Copy `my-whisper.el` to your Emacs configuration directory:
-   ```bash
-   cp my-whisper.el ~/.emacs.d/
-   ```
-
-2. Add the following to your `init.el`:
-   ```elisp
-   ;; Load the whisper package
-   (load-file "~/.emacs.d/my-whisper.el")
-   ```
-
-### Option 3: Using use-package
-
-If you use `use-package`, add this to your `init.el`:
-
-```elisp
-(use-package my-whisper
-  :load-path "~/.emacs.d/my-whisper"
-  :custom
-  (my-whisper-homedir "~/whisper.cpp/")  ; Optional: customize if different
-  (my-whisper-model "ggml-base.en.bin")  ; Optional: choose default model
-  :bind (("C-c v" . my-whisper-transcribe-fast)
-         ("C-c n" . my-whisper-transcribe)))
-```
-
 ## Usage
+
+
+This provides the **my-whisper-mode**, a global minor mode that provides the ability to record audio and then process it with whisper.cpp and insert transcribed text in the current buffer at point.
+
+⚠️  🚧 🚧 🚧 Most of the text below is obsolete and needs to be updated.
 
 ### Key Bindings
 
-- **`C-c n`**: Fast mode (base.en model) - quicker transcription, suitable for most use cases
-- **`C-c v`**: Accurate mode (medium.en model) - slower but more accurate transcription
+- **`M-x my-whisper-mode`**: Start recording using the selected model.
+- **`C-c .`**: Stop recording, transcribe recorded speech into text and insert in current buffer at point.
+- **`C-c ,`**: Start recording again.
+- **`M-x my-whisper-mode`**: Turn my-whisper-mode off.
+
 
 ### Basic Workflow
 
