@@ -1,6 +1,18 @@
-# My Whisper - Speech-to-Text for Emacs - My fork of it.
+# My Whisper - Speech-to-Text for Emacs - My enhanced fork.
 
-A simple Emacs package that provides speech-to-text functionality using Whisper.cpp. Record audio directly from Emacs and have it transcribed and inserted at your cursor position.
+A simple Emacs package that provides speech-to-text functionality using Whisper.cpp.
+
+Record audio directly from Emacs and have it transcribed and inserted in current buffer at point.
+The package provides `my-whisper-mode`, a global minor mode that starts audio recording and transcribes text when stopped.
+It also provides the `my-whisper-transcribe-file` command to transcribe an already recorded WAV audio file.
+
+I will eventually change this page in my fork.  This is under construction.
+
+More information on how to use this fork of the project is available
+in my PEL project inside the [Writing Tools PDF](https://raw.githubusercontent.com/pierre-rouleau/pel/master/doc/pdf/writing-tools.pdf#page=2).
+[PEL](https://github.com/pierre-rouleau/pel#readme) can install the package automatically and creates bindings for the global commands.
+
+
 
 ## Demo Video
 
