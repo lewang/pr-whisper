@@ -57,6 +57,7 @@
 
 ;;; Code:
 
+(require 'ring)
 (declare-function vterm-send-string "vterm")
 
 (defgroup my-whisper nil
@@ -146,6 +147,11 @@ If MODEL is nil, use `my-whisper-model'."
           (directory-file-name my-whisper-homedir)
           (or model my-whisper-model)))
 
+(defcustom my-whisper-history-capacity 20
+  "Maximum number of transcriptions to keep in history ring."
+  :group 'my-whisper
+  :type 'integer)
+
 (defcustom my-whisper-vocabulary-file (expand-file-name
                                        (locate-user-emacs-file
                                         "whisper-vocabulary.txt"))
@@ -217,6 +223,9 @@ Recording starting with %s. Editing halted. Press C-g to stop."
   "Nil when inactive, name of recording process when recording.")
 (defvar my-whisper--wav-file nil
   "Name of wave-file used during mode execution.")
+(defvar my-whisper--history-ring nil
+  "Ring of recent transcriptions.
+Each entry is a cons cell (TEXT . BUFFER-NAME).")
 
 (defun my-whisper--set-lighter-to (lighter)
   "Update my-whisper lighter in the mode lines of all buffers to LIGHTER."
@@ -242,6 +251,12 @@ Recording starting with %s. Editing halted. Press C-g to stop."
     (setq my-whisper--recording-process-name record-process-name)
     (my-whisper--set-lighter-to my-whisper-lighter-when-recording)
     (message "Recording audio!")))
+
+(defun my-whisper--add-to-history (text buffer-name)
+  "Add TEXT with BUFFER-NAME to the history ring."
+  (unless my-whisper--history-ring
+    (setq my-whisper--history-ring (make-ring my-whisper-history-capacity)))
+  (ring-insert my-whisper--history-ring (cons text buffer-name)))
 
 (defun my-whisper--transcribe ()
   "Transcribe audio previously recorded."
@@ -289,7 +304,8 @@ Recording starting with %s. Editing halted. Press C-g to stop."
                                      (vterm-send-string (concat output " ")))
                                  (goto-char original-point)
                                  ;; Insert text, then a single space
-                                 (insert output " "))))))
+                                 (insert output " ")))
+                             (my-whisper--add-to-history output (buffer-name original-buf)))))
                        ;; Clean up temporary buffer
                        (kill-buffer temp-buf)
                        ;; And delete WAV file that has been processed.
@@ -376,6 +392,29 @@ This command can only be used when `my-whisper-mode is inactive."
   (setq my-whisper--wav-file fname)
   (my-whisper--transcribe)
   (setq my-whisper--wav-file nil))
+
+;;;###autoload
+(defun my-whisper-insert-from-history ()
+  "Insert a previous transcription from history.
+Prompts with completing-read showing transcriptions with their source buffer."
+  (interactive)
+  (unless (and my-whisper--history-ring
+               (not (ring-empty-p my-whisper--history-ring)))
+    (user-error "No transcription history"))
+  (let* ((entries (ring-elements my-whisper--history-ring))
+         (candidates (mapcar (lambda (entry)
+                               (let ((text (car entry))
+                                     (buf-name (cdr entry)))
+                                 ;; Format: truncated-text (buffer-name)
+                                 (cons (format "%s  [%s]"
+                                               (truncate-string-to-width text 60 nil nil "...")
+                                               buf-name)
+                                       text)))
+                             entries))
+         (choice (completing-read "Insert transcription: " candidates nil t))
+         (text (cdr (assoc choice candidates))))
+    (when text
+      (insert text " "))))
 
 ;; ---------------------------------------------------------------------------
 (provide 'my-whisper)
