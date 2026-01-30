@@ -38,46 +38,27 @@
 ;; Whisper models, inserting the transcribed text at your cursor.
 
 ;; Features:
-;; - `my-whisper-mode', a global minor mode that records audio and insert
-;;   transcribed text in buffer.  While this global minor mode is active the
-;;   following  commands are available:
-;;   - `my-whisper-stop-record' to stop  current audio recording, and insert
-;;     transcribed text in current buffer at point.
-;;   - `my-whisper-record-again' to restart audio recording.
-;;   - Executing `my-whisper-mode' again stops recording if it was active
-;;     and if it was active insert transcribed text in current buffer at
-;;     point.
-;; - The `my-whisper-transcribe-file' command that prompts for a file,
-;;   transcribe it and insert text in current buffer at point.
-;;
-;; - Several transcription modes are supported by customization
+;; - `my-whisper-mode', a global minor mode that enables speech-to-text.
+;;   While active, use C-c . to toggle recording on/off.
+;; - `my-whisper-transcribe-file' command to transcribe an existing WAV file.
 ;; - Custom vocabulary support for specialized terminology
-;; - Automatic vocabulary length validation
 ;; - Async processing with process sentinels
-;; - Clean temporary file management
 
 ;; Basic usage:
 ;;
-;;  - Activate whisper-mode with: M-x my-whisper-mode
-;;    - This starts audio recording store in a WAV file.
-;;  - Stop recording and insert transcribed text by one of the following:
-;;    - M-x my-whisper-stop-record : stop recording and transcribe text.
-;;      - This command is also bound to C-c .
-;;    - M-x my-whisper-mode : stop recording, insert transcribed text and
-;;                            stop the mode.
+;;  1. Enable the mode: M-x my-whisper-mode
+;;  2. Start recording: C-c .
+;;  3. Stop recording and transcribe: C-c . (same key toggles)
 ;;
-;; The `my-whisper-mode' is a global minor mode; recording audio does not halt
-;; Emacs and you can execute any other Emacs operation.
-;;
-;;
-;; Recommended keybindings to toggle `my-whisper-mode' to add to your init.el
-;; file:
-;;
-;;   (global-set-key (kbd "C-c w") #'my-whisper-mode)
+;; The mode can stay enabled - just use C-c . whenever you want to dictate.
+;; Disabling the mode (M-x my-whisper-mode again) stops any active recording.
 
 ;; See the README for installation and configuration details.
 
 ;;; Code:
+
+(require 'ring)
+(declare-function vterm-send-string "vterm")
 
 (defgroup my-whisper nil
   "Speech-to-text using Whisper.cpp system."
@@ -95,14 +76,8 @@
   :group 'my-whisper
   :type 'string)
 
-(defcustom my-whisper-key-for-stop-record (kbd "C-c .")
-  "Key binding for `my-whisper-stop-record'.
-Use a string of the same format that what is the output of `kbd'."
-  :group 'my-whisper
-  :type 'key)
-
-(defcustom my-whisper-key-for-record-again (kbd "C-c ,")
-  "Key binding for `my-whisperrecord-again'.
+(defcustom my-whisper-key-for-toggle (kbd "C-c .")
+  "Key binding for `my-whisper-toggle-recording'.
 Use a string of the same format that what is the output of `kbd'."
   :group 'my-whisper
   :type 'key)
@@ -165,6 +140,27 @@ If MODEL is nil, use `my-whisper-model'."
   (format "%s/models/%s"
           (directory-file-name my-whisper-homedir)
           (or model my-whisper-model)))
+
+(defcustom my-whisper-history-capacity 20
+  "Maximum number of transcriptions to keep in history ring."
+  :group 'my-whisper
+  :type 'integer)
+
+(defcustom my-whisper-history-filter-regexp
+  (rx (or (seq "(" (or "typing" "silence" "music" "applause") ")")
+          (seq "[" (or "typing" "silence" "music" "applause") "]")))
+  "Regexp matching transcriptions to exclude from history.
+Whisper outputs these when it detects non-speech audio.
+Set to nil to disable filtering."
+  :group 'my-whisper
+  :type '(choice (const :tag "No filtering" nil)
+                 (regexp :tag "Filter regexp")))
+
+(defcustom my-whisper-history-min-length 3
+  "Minimum character length for transcription to be added to history.
+Transcriptions shorter than this are filtered out."
+  :group 'my-whisper
+  :type 'integer)
 
 (defcustom my-whisper-vocabulary-file (expand-file-name
                                        (locate-user-emacs-file
@@ -237,6 +233,11 @@ Recording starting with %s. Editing halted. Press C-g to stop."
   "Nil when inactive, name of recording process when recording.")
 (defvar my-whisper--wav-file nil
   "Name of wave-file used during mode execution.")
+(defvar my-whisper--history-ring nil
+  "Ring of recent transcriptions.
+Each entry is a cons cell (TEXT . BUFFER-NAME).
+Entries are promoted to most recent when re-inserted via
+`my-whisper-insert-from-history', implementing LRU-style eviction.")
 
 (defun my-whisper--set-lighter-to (lighter)
   "Update my-whisper lighter in the mode lines of all buffers to LIGHTER."
@@ -262,6 +263,21 @@ Recording starting with %s. Editing halted. Press C-g to stop."
     (setq my-whisper--recording-process-name record-process-name)
     (my-whisper--set-lighter-to my-whisper-lighter-when-recording)
     (message "Recording audio!")))
+
+(defun my-whisper--history-filter-p (text)
+  "Return non-nil if TEXT should be excluded from history."
+  (or (< (length text) my-whisper-history-min-length)
+      (and my-whisper-history-filter-regexp
+           (string-match-p my-whisper-history-filter-regexp text))))
+
+(defun my-whisper--add-to-history (text buffer-name)
+  "Add TEXT with BUFFER-NAME to the history ring.
+TEXT is filtered based on `my-whisper-history-filter-regexp' and
+`my-whisper-history-min-length'."
+  (unless (my-whisper--history-filter-p text)
+    (unless my-whisper--history-ring
+      (setq my-whisper--history-ring (make-ring my-whisper-history-capacity)))
+    (ring-insert my-whisper--history-ring (cons text buffer-name))))
 
 (defun my-whisper--transcribe ()
   "Transcribe audio previously recorded."
@@ -292,6 +308,7 @@ Recording starting with %s. Editing halted. Press C-g to stop."
      :connection-type 'pipe
      :stderr (get-buffer-create "*my-whisper err*")
      :sentinel (lambda (_proc event)
+                 (message "event %s" event)
                  (if (string= event "finished\n")
                      (when (buffer-live-p temp-buf)
                        ;; Trim excess white space
@@ -302,9 +319,14 @@ Recording starting with %s. Editing halted. Press C-g to stop."
                              (message "Whisper: No transcription output.")
                            (when (buffer-live-p original-buf)
                              (with-current-buffer original-buf
-                               (goto-char original-point)
-                               ;; Insert text, then a single space
-                               (insert output " ")))))
+                               (if (eq major-mode 'vterm-mode)
+                                   (progn
+                                     (message "my-whisper vterm sending %s" output)
+                                     (vterm-send-string (concat output " ")))
+                                 (goto-char original-point)
+                                 ;; Insert text, then a single space
+                                 (insert output " ")))
+                             (my-whisper--add-to-history output (buffer-name original-buf)))))
                        ;; Clean up temporary buffer
                        (kill-buffer temp-buf)
                        ;; And delete WAV file that has been processed.
@@ -317,6 +339,8 @@ Recording starting with %s. Editing halted. Press C-g to stop."
 (defun my-whisper-stop-record ()
   "Stop recording, insert transcribed text at point."
   (interactive)
+  (unless my-whisper--recording-process-name
+    (user-error "Not currently recording"))
   (interrupt-process my-whisper--recording-process-name)
   (setq my-whisper--recording-process-name nil)
   (message "Audio recording stopped.")
@@ -324,49 +348,45 @@ Recording starting with %s. Editing halted. Press C-g to stop."
   (my-whisper--transcribe))
 
 ;;;###autoload
-(defun my-whisper-record-again ()
-  "Start recording again."
+(defun my-whisper-toggle-recording ()
+  "Toggle recording on/off."
   (interactive)
   (if my-whisper--recording-process-name
-      (user-error "Already recording!")
-    (my-whisper-record-audio)))
+      (my-whisper-stop-record)
+    (let ((model my-whisper-model)
+          (vocab-word-count (my-whisper--check-vocabulary-length)))
+      (my-whisper--validate-environment model)
+      (my-whisper--start-message model vocab-word-count)
+      (my-whisper-record-audio))))
 
 (defvar my-whisper-keymap
   (let ((map (make-sparse-keymap)))
-    (define-key map my-whisper-key-for-stop-record #'my-whisper-stop-record)
-    (define-key map my-whisper-key-for-record-again #'my-whisper-record-again)
+    (define-key map my-whisper-key-for-toggle #'my-whisper-toggle-recording)
     map))
 
 ;;;###autoload
 (define-minor-mode my-whisper-mode
   "Minor mode to transcribe speech to text.
-When activate, start recording.
-When stopped, stops recording and insert transcribed text in current
-buffer.
+When activated, enables recording controls but does not start recording.
+Use \\[my-whisper-toggle-recording] to start/stop recording.
+When recording stops, transcribed text is inserted at point.
 
 \\{my-whisper-keymap}"
-  :lighter my-whisper-lighter-when-recording
+  :lighter my-whisper-lighter-when-idle
   :keymap my-whisper-keymap
   :global t
-  (let ((model my-whisper-model))
-    (my-whisper--validate-environment model)
-    (let ((wav-file (format "/tmp/whisper-recording-%s.wav" (emacs-pid)))
-          (vocab-word-count (my-whisper--check-vocabulary-length)) )
-      (if my-whisper-mode
-          ;; Start minor mode: start recording
-          (progn
-            ;; Inform user recording is starting.
-            ;; Warn if vocabulary is too large.
-            (my-whisper--start-message model vocab-word-count)
-            ;; Record audio in the specified wav-file
-            (setq my-whisper--wav-file wav-file)
-            (my-whisper-record-audio))
+  (if my-whisper-mode
+      ;; Start minor mode: set up wav file path, don't start recording yet
+      (let ((wav-file (format "/tmp/whisper-recording-%s.wav" (emacs-pid))))
+        (setq my-whisper--wav-file wav-file)
+        (my-whisper--set-lighter-to my-whisper-lighter-when-idle)
+        (message "my-whisper-mode enabled. Press %s to start recording."
+                 (key-description my-whisper-key-for-toggle)))
 
-        ;; Stop minor mode: stop recording and insert transcribed text
-        (when my-whisper--recording-process-name
-          (my-whisper-stop-record)
-          (my-whisper--transcribe)
-          (setq my-whisper--wav-file nil))))))
+    ;; Stop minor mode: stop recording if active
+    (when my-whisper--recording-process-name
+      (my-whisper-stop-record))
+    (setq my-whisper--wav-file nil)))
 
 ;;;###autoload
 (defun my-whisper-transcribe-file (fname)
@@ -385,6 +405,38 @@ This command can only be used when `my-whisper-mode is inactive."
   (setq my-whisper--wav-file fname)
   (my-whisper--transcribe)
   (setq my-whisper--wav-file nil))
+
+;;;###autoload
+(defun my-whisper-insert-from-history ()
+  "Insert a previous transcription from history.
+Prompts with completing-read showing transcriptions with their source buffer.
+
+When a transcription is selected, it is promoted to the most recent
+position in the history ring, making it less likely to be evicted
+when the ring reaches capacity."
+  (interactive)
+  (unless (and my-whisper--history-ring
+               (not (ring-empty-p my-whisper--history-ring)))
+    (user-error "No transcription history"))
+  (let* ((entries (ring-elements my-whisper--history-ring))
+         (candidates (mapcar (lambda (entry)
+                               (let ((text (car entry))
+                                     (buf-name (cdr entry)))
+                                 ;; Format: truncated-text [buffer-name] -> entry
+                                 (cons (format "%s  [%s]"
+                                               (truncate-string-to-width text 60 nil nil "...")
+                                               buf-name)
+                                       entry)))
+                             entries))
+         (choice (completing-read "Insert transcription: " candidates nil t))
+         (entry (cdr (assoc choice candidates))))
+    (when entry
+      ;; Promote entry to most recent position (LRU behavior)
+      (let ((idx (ring-member my-whisper--history-ring entry)))
+        (when idx
+          (ring-remove my-whisper--history-ring idx)
+          (ring-insert my-whisper--history-ring entry)))
+      (insert (car entry) " "))))
 
 ;; ---------------------------------------------------------------------------
 (provide 'my-whisper)
