@@ -146,6 +146,22 @@ If MODEL is nil, use `my-whisper-model'."
   :group 'my-whisper
   :type 'integer)
 
+(defcustom my-whisper-history-filter-regexp
+  (rx (or (seq "(" (or "typing" "silence" "music" "applause") ")")
+          (seq "[" (or "typing" "silence" "music" "applause") "]")))
+  "Regexp matching transcriptions to exclude from history.
+Whisper outputs these when it detects non-speech audio.
+Set to nil to disable filtering."
+  :group 'my-whisper
+  :type '(choice (const :tag "No filtering" nil)
+                 (regexp :tag "Filter regexp")))
+
+(defcustom my-whisper-history-min-length 3
+  "Minimum character length for transcription to be added to history.
+Transcriptions shorter than this are filtered out."
+  :group 'my-whisper
+  :type 'integer)
+
 (defcustom my-whisper-vocabulary-file (expand-file-name
                                        (locate-user-emacs-file
                                         "whisper-vocabulary.txt"))
@@ -248,11 +264,20 @@ Entries are promoted to most recent when re-inserted via
     (my-whisper--set-lighter-to my-whisper-lighter-when-recording)
     (message "Recording audio!")))
 
+(defun my-whisper--history-filter-p (text)
+  "Return non-nil if TEXT should be excluded from history."
+  (or (< (length text) my-whisper-history-min-length)
+      (and my-whisper-history-filter-regexp
+           (string-match-p my-whisper-history-filter-regexp text))))
+
 (defun my-whisper--add-to-history (text buffer-name)
-  "Add TEXT with BUFFER-NAME to the history ring."
-  (unless my-whisper--history-ring
-    (setq my-whisper--history-ring (make-ring my-whisper-history-capacity)))
-  (ring-insert my-whisper--history-ring (cons text buffer-name)))
+  "Add TEXT with BUFFER-NAME to the history ring.
+TEXT is filtered based on `my-whisper-history-filter-regexp' and
+`my-whisper-history-min-length'."
+  (unless (my-whisper--history-filter-p text)
+    (unless my-whisper--history-ring
+      (setq my-whisper--history-ring (make-ring my-whisper-history-capacity)))
+    (ring-insert my-whisper--history-ring (cons text buffer-name))))
 
 (defun my-whisper--transcribe ()
   "Transcribe audio previously recorded."
