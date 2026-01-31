@@ -260,6 +260,10 @@ Recording starting with %s."
   "Nil when inactive, name of recording process when recording.")
 (defvar pr-whisper--wav-file nil
   "Name of wave-file used during mode execution.")
+(defvar pr-whisper--insertion-marker nil
+  "Marker where transcribed text will be inserted.
+Set when recording starts, used when transcription completes.
+The marker tracks position in its buffer even if user switches buffers.")
 (defvar pr-whisper--history-ring nil
   "Ring of recent transcriptions.
 Each entry is a cons cell (TEXT . BUFFER-NAME).
@@ -274,6 +278,8 @@ Entries are promoted to most recent when re-inserted via
 
 (defun pr-whisper-record-audio ()
   "Record audio, store it in the specified WAV-FILE."
+  ;; Save insertion point before recording starts
+  (setq pr-whisper--insertion-marker (point-marker))
   ;; Start recording audio.
   ;; Use the sox command. Ref: https://sourceforge.net/projects/sox/
   ;;  -d : record audio
@@ -313,29 +319,32 @@ shorter than `pr-whisper-history-min-length'."
       (setq pr-whisper--history-ring (make-ring pr-whisper-history-capacity)))
     (ring-insert pr-whisper--history-ring (cons text buffer-name))))
 
-(defun pr-whisper--handle-transcription (output original-buf marker)
-  "Handle transcription OUTPUT, inserting at MARKER in ORIGINAL-BUF.
+(defun pr-whisper--handle-transcription (output)
+  "Handle transcription OUTPUT, inserting at saved marker position.
+Uses `pr-whisper--insertion-marker' set when recording started.
 Checks for empty output, noise, adds to history, and inserts text."
   (setq output (string-trim output))
-  (cond
-   ((string-empty-p output)
-    (message "Whisper: No transcription output."))
-   ((pr-whisper--noise-p output)
-    (message "Whisper: Ignored noise: %s" output))
-   (t
-    ;; Add to history first, before attempting insertion
-    ;; so transcription is saved even if insertion fails
-    (pr-whisper--add-to-history output (buffer-name original-buf))
-    (when (buffer-live-p original-buf)
-      (with-current-buffer original-buf
-        (condition-case nil
-            (if (eq major-mode 'vterm-mode)
-                (vterm-send-string (concat output " "))
-              (goto-char marker)
-              (insert output " "))
-          (buffer-read-only
-           (message "Whisper: Buffer is read-only, text saved to history: %s"
-                    (truncate-string-to-width output 50 nil nil "...")))))))))
+  (let ((marker pr-whisper--insertion-marker)
+        (buf (marker-buffer pr-whisper--insertion-marker)))
+    (cond
+     ((string-empty-p output)
+      (message "Whisper: No transcription output."))
+     ((pr-whisper--noise-p output)
+      (message "Whisper: Ignored noise: %s" output))
+     (t
+      ;; Add to history first, before attempting insertion
+      ;; so transcription is saved even if insertion fails
+      (pr-whisper--add-to-history output (buffer-name buf))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (condition-case nil
+              (if (eq major-mode 'vterm-mode)
+                  (vterm-send-string (concat output " "))
+                (goto-char marker)
+                (insert output " "))
+            (buffer-read-only
+             (message "Whisper: Buffer is read-only, text saved to history: %s"
+                      (truncate-string-to-width output 50 nil nil "..."))))))))))
 
 (defun pr-whisper--transcribe ()
   "Transcribe audio previously recorded.
@@ -349,8 +358,6 @@ Uses server backend if server process is running, otherwise CLI."
 (defun pr-whisper--transcribe-via-cli (wav-file)
   "Transcribe WAV-FILE using whisper-cli."
   (let* ((model pr-whisper-model)
-         (original-buf (current-buffer))
-         (original-point (point-marker)) ; Marker tracks position even if buffer changes
          (vocab-prompt (pr-whisper--get-vocabulary-prompt))
          (temp-buf (generate-new-buffer " *Whisper Temp*"))
 
@@ -377,8 +384,7 @@ Uses server backend if server process is running, otherwise CLI."
                  (if (string= event "finished\n")
                      (when (buffer-live-p temp-buf)
                        (pr-whisper--handle-transcription
-                        (with-current-buffer temp-buf (buffer-string))
-                        original-buf original-point)
+                        (with-current-buffer temp-buf (buffer-string)))
                        ;; Clean up temporary buffer
                        (kill-buffer temp-buf)
                        ;; And delete WAV file that has been processed.

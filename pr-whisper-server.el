@@ -99,9 +99,7 @@
 
 (defun pr-whisper--transcribe-via-server (wav-file)
   "Transcribe WAV-FILE using whisper-server HTTP API."
-  (let* ((marker (point-marker))
-         (original-buf (current-buffer))
-         (url (format "http://localhost:%d/inference" pr-whisper-server-port))
+  (let* ((url (format "http://localhost:%d/inference" pr-whisper-server-port))
          (boundary (format "----EmacsFormBoundary%d" (random 1000000000)))
          (url-request-method "POST")
          (url-request-extra-headers
@@ -117,7 +115,7 @@
          (goto-char (point-min))
          (re-search-forward "\r?\n\r?\n" nil t)  ; Skip HTTP headers
          (pr-whisper--handle-transcription
-          (buffer-substring (point) (point-max)) original-buf marker))
+          (buffer-substring (point) (point-max))))
        ;; Cleanup
        (kill-buffer)
        (when (file-exists-p wav-file)
