@@ -312,26 +312,46 @@ Entries are promoted to most recent when re-inserted via
                 (not (pr-whisper--server-ready-p)))
       (sleep-for 0.1))))
 
+(defvar url-request-extra-headers)
+(defvar url-request-data)
+
+(defun pr-whisper--make-multipart-body (wav-file boundary)
+  "Create multipart/form-data body for WAV-FILE upload with BOUNDARY."
+  (let ((file-content (with-temp-buffer
+                        (set-buffer-multibyte nil)
+                        (insert-file-contents-literally wav-file)
+                        (buffer-string))))
+    (concat
+     "--" boundary "\r\n"
+     "Content-Disposition: form-data; name=\"file\"; filename=\""
+     (file-name-nondirectory wav-file) "\"\r\n"
+     "Content-Type: audio/wav\r\n\r\n"
+     file-content "\r\n"
+     "--" boundary "\r\n"
+     "Content-Disposition: form-data; name=\"response_format\"\r\n\r\n"
+     "text\r\n"
+     "--" boundary "--\r\n")))
+
 (defun pr-whisper--transcribe-via-server (wav-file)
   "Transcribe WAV-FILE using whisper-server HTTP API."
   (let* ((marker (point-marker))
          (original-buf (current-buffer))
          (url (format "http://localhost:%d/inference" pr-whisper-server-port))
-         (temp-buf (generate-new-buffer " *whisper-server-output*")))
+         (boundary (format "----EmacsFormBoundary%d" (random 1000000000)))
+         (url-request-method "POST")
+         (url-request-extra-headers
+          `(("Content-Type" . ,(concat "multipart/form-data; boundary=" boundary))))
+         (url-request-data (pr-whisper--make-multipart-body wav-file boundary)))
     ;; Wait for server to be ready (should already be warm from recording time)
     (pr-whisper--wait-for-server 5)
-    ;; Use curl for multipart form upload (url.el doesn't handle this well)
-    (make-process
-     :name "whisper-server-transcribe"
-     :buffer temp-buf
-     :command (list "curl" "-s" "-X" "POST" url
-                    "-F" (format "file=@%s" (expand-file-name wav-file))
-                    "-F" "response_format=text")
-     :sentinel
-     (lambda (proc event)
-       (when (string= event "finished\n")
-         (let ((output (with-current-buffer (process-buffer proc)
-                         (string-trim (buffer-string)))))
+    (url-retrieve
+     url
+     (lambda (status)
+       (if (plist-get status :error)
+           (message "Whisper server error: %s" (plist-get status :error))
+         (goto-char (point-min))
+         (re-search-forward "\r?\n\r?\n" nil t)  ; Skip HTTP headers
+         (let ((output (string-trim (buffer-substring (point) (point-max)))))
            (cond
             ((string-empty-p output)
              (message "Whisper: No transcription output."))
@@ -349,13 +369,14 @@ Entries are promoted to most recent when re-inserted via
                        (insert output " "))
                    (buffer-read-only
                     (message "Whisper: Buffer is read-only, text saved to history: %s"
-                             (truncate-string-to-width output 50 nil nil "..."))))))))
-           ;; Cleanup
-           (kill-buffer temp-buf)
-           (when (file-exists-p wav-file)
-             (delete-file wav-file))
-           ;; Stop server after transcription
-           (pr-whisper--stop-server)))))))
+                             (truncate-string-to-width output 50 nil nil "..."))))))))))
+       ;; Cleanup
+       (kill-buffer)
+       (when (file-exists-p wav-file)
+         (delete-file wav-file))
+       ;; Stop server after transcription
+       (pr-whisper--stop-server))
+     nil t)))
 
 (defun pr-whisper-record-audio ()
   "Record audio, store it in the specified WAV-FILE."
