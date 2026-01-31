@@ -183,6 +183,15 @@ Change if 8178 conflicts with another service."
   :type 'integer
   :group 'pr-whisper)
 
+(defcustom pr-whisper-insert-function nil
+  "Function to insert transcribed text.
+If non-nil, called with two arguments: TEXT and MARKER.
+The function is responsible for inserting the text at MARKER.
+If nil, the default insertion behavior is used."
+  :type '(choice (const :tag "Default insertion" nil)
+                 (function :tag "Custom insert function"))
+  :group 'pr-whisper)
+
 (defcustom pr-whisper-vocabulary-file (expand-file-name
                                        (locate-user-emacs-file
                                         "whisper-vocabulary.txt"))
@@ -319,6 +328,20 @@ shorter than `pr-whisper-history-min-length'."
       (setq pr-whisper--history-ring (make-ring pr-whisper-history-capacity)))
     (ring-insert pr-whisper--history-ring (cons text buffer-name))))
 
+(defun pr-whisper-default-insert (text marker)
+  "Insert TEXT at MARKER using default behavior.
+Handles vterm mode and read-only buffers."
+  (when (marker-buffer marker)
+    (with-current-buffer (marker-buffer marker)
+      (condition-case nil
+          (if (eq major-mode 'vterm-mode)
+              (vterm-send-string (concat text " "))
+            (goto-char marker)
+            (insert text " "))
+        (buffer-read-only
+         (message "Whisper: Buffer is read-only, text saved to history: %s"
+                  (truncate-string-to-width text 50 nil nil "...")))))))
+
 (defun pr-whisper--handle-transcription (output)
   "Handle transcription OUTPUT, inserting at saved marker position.
 Uses `pr-whisper--insertion-marker' set when recording started.
@@ -335,16 +358,9 @@ Checks for empty output, noise, adds to history, and inserts text."
       ;; Add to history first, before attempting insertion
       ;; so transcription is saved even if insertion fails
       (pr-whisper--add-to-history output (buffer-name buf))
-      (when (buffer-live-p buf)
-        (with-current-buffer buf
-          (condition-case nil
-              (if (eq major-mode 'vterm-mode)
-                  (vterm-send-string (concat output " "))
-                (goto-char marker)
-                (insert output " "))
-            (buffer-read-only
-             (message "Whisper: Buffer is read-only, text saved to history: %s"
-                      (truncate-string-to-width output 50 nil nil "..."))))))))))
+      (if pr-whisper-insert-function
+          (funcall pr-whisper-insert-function output marker)
+        (pr-whisper-default-insert output marker))))))
 
 (defun pr-whisper--transcribe ()
   "Transcribe audio previously recorded.
