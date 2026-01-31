@@ -154,7 +154,7 @@ If MODEL is nil, use `pr-whisper-model'."
 
 (defcustom pr-whisper-noise-regexp
   (rx (or (seq "(" (or "typing" "silence" "music" "applause") ")")
-          (seq "[" (* space) (or "typing" "silence" "music" "applause" "pause") (* space) "]")))
+          (seq "[" (* space) (or "typing" "silence" "music" "applause" "pause" "BLANK_AUDIO") (* space) "]")))
   "Regexp matching noise transcriptions to ignore.
 Whisper outputs these when it detects non-speech audio.
 Matching transcriptions are not inserted and not added to history.
