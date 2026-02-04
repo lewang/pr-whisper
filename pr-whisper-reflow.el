@@ -3,6 +3,13 @@
 ;;; Commentary:
 ;; Use gptel to reflow whisper transcriptions into logical paragraphs.
 ;;
+;; Why not a local model? Reflowing requires understanding enough English
+;; context to identify sentence boundaries, topic transitions, and spoken
+;; commands like "new paragraph". Small local models (e.g., Qwen 1.5B,
+;; Llama 3B) lack the comprehension needed for reliable results. This
+;; module uses Google's TPU-based Gemini Flash models as a compromise:
+;; fast response times with sufficient language understanding.
+;;
 ;; To use as insert function, add to your init.el:
 ;;   (require 'pr-whisper-reflow)
 ;;   (setq pr-whisper-insert-function #'pr-whisper-reflow-insert)
