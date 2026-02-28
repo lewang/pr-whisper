@@ -2,6 +2,7 @@
 
 ;;; Commentary:
 ;; Use gptel to reflow whisper transcriptions into logical paragraphs.
+;; Requires gptel >= 0.9.8.5 (for `gptel-with-preset').
 ;;
 ;; Why not a local model? Reflowing requires understanding enough English
 ;; context to identify sentence boundaries, topic transitions, and spoken
