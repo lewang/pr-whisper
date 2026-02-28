@@ -18,6 +18,7 @@
 
 (defvar gptel-model)
 (declare-function gptel-request "gptel")
+(declare-function gptel-with-preset "gptel")
 (declare-function pr-whisper-default-insert "pr-whisper")
 (defvar pr-whisper-reflow-prompt
   "Reflow this transcription into logical paragraphs. Rules:
@@ -59,7 +60,7 @@ Reflows TEXT via LLM and inserts at MARKER when complete.
 Calls `pr-whisper-reflow-predicate' to decide whether to reflow;
 otherwise uses default insertion."
   (if (funcall pr-whisper-reflow-predicate text marker)
-      (let ((gptel-model pr-whisper-reflow-model))
+      (gptel-with-preset `(:model ,pr-whisper-reflow-model)
         (message "Reflowing transcription...")
         (gptel-request
          (format pr-whisper-reflow-prompt text)
